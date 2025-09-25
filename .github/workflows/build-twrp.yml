@@ -6,77 +6,64 @@ on:
 jobs:
   build:
     runs-on: ubuntu-22.04
-    timeout-minutes: 240
+    timeout-minutes: 180
+    container:
+      image: ghcr.io/minimal-manifest-twrp/twrp-docker:latest
+      options: --user root
 
     steps:
-    - name: Checkout repository
+    - name: Checkout device tree
       uses: actions/checkout@v4
+      with:
+        repository: GokuBlack557/twrp_device_samsung_a3core
+        path: device/samsung/a3core
 
-    - name: Install build dependencies
+    - name: Clean build environment
       run: |
-        sudo apt-get update
-        sudo apt-get install -y git-core gnupg flex bison build-essential zip curl \
-          zlib1g-dev gcc-multilib g++-multilib libc6-dev-i386 libncurses5-dev \
-          x11proto-core-dev libx11-dev libgl1-mesa-dev libxml2-utils xsltproc \
-          unzip fontconfig python3 rsync ca-certificates wget openjdk-11-jdk
+        cd /workspace
+        echo "Cleaning old build files..."
+        rm -rf out/* build/* device/* vendor/* || true
+        df -h .
 
-    - name: Install repo tool
+    - name: Prepare device tree
       run: |
-        mkdir -p $HOME/bin
-        curl -sLo $HOME/bin/repo https://storage.googleapis.com/git-repo-downloads/repo
-        chmod a+x $HOME/bin/repo
-        echo "$HOME/bin" >> $GITHUB_PATH
+        cd /workspace
+        mkdir -p device/samsung
+        mv $GITHUB_WORKSPACE/device/samsung/a3core device/samsung/a3core
+        ls -lah device/samsung/a3core
 
-    - name: Sync TWRP source (shallow)
+    - name: Build recovery
       run: |
-        mkdir -p $HOME/twrp
-        cd $HOME/twrp
-        repo init -u https://github.com/minimal-manifest-twrp/platform_manifest_twrp_aosp.git -b twrp-11
-        repo sync --force-sync --no-clone-bundle --no-tags --depth=1 -j4 || true
-        # save space
-        find .repo -name ".git" -type d -exec rm -rf {} + || true
-
-    - name: Clone device tree
-      run: |
-        cd $HOME/twrp
-        git clone https://github.com/GokuBlack557/twrp_device_samsung_a3core.git device/samsung/a3core || true
-        ls -lah device/samsung/a3core || true
-
-    - name: Build recovery image
-      run: |
-        cd $HOME/twrp
-        . build/envsetup.sh || true
+        cd /workspace
+        . build/envsetup.sh
         if lunch twrp_a3core-eng 2>/dev/null; then
           echo "Using twrp_a3core-eng"
         elif lunch omni_a3core-eng 2>/dev/null; then
           echo "Using omni_a3core-eng"
         else
-          echo "Lunch failed, available combos:"
+          echo "Lunch failed, showing combos:"
           lunch | head -n 50
           exit 1
         fi
-        # slower but less disk I/O
-        mka recoveryimage -j1 || true
-        echo "Final out folder:"
+        mka recoveryimage -j1
+        echo "Output files:"
         ls -R out/target/product || true
 
     - name: Upload recovery artifact
-      if: success()
       uses: actions/upload-artifact@v4
       with:
         name: twrp-a3core-recovery
         path: |
-          $HOME/twrp/out/target/product/*/recovery.img
-          $HOME/twrp/out/target/product/*/twrp*.img
-          $HOME/twrp/out/target/product/*/recovery-*.img
+          /workspace/out/target/product/*/recovery.img
+          /workspace/out/target/product/*/twrp*.img
+          /workspace/out/target/product/*/recovery-*.img
 
-    - name: Upload logs (always, for debugging)
+    - name: Upload logs (always)
       if: always()
       uses: actions/upload-artifact@v4
       with:
         name: twrp-build-logs
         path: |
-          $HOME/twrp/out/**
-          $HOME/twrp/build/**
+          /workspace/out/**
+          /workspace/build/**
         if-no-files-found: ignore
-

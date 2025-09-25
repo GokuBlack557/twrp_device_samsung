@@ -1,58 +1,45 @@
-name: Build TWRP (a3core)
+name: build-twrp
 
 on:
   workflow_dispatch:
 
 jobs:
   build:
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-latest
 
     steps:
     - name: Checkout
-      uses: actions/checkout@v4
+      uses: actions/checkout@v3
 
-    - name: Install dependencies
+    - name: Set up environment
       run: |
-        sudo apt update
-        sudo apt install -y git-core gnupg flex bison build-essential \
-        zip curl zlib1g-dev gcc-multilib g++-multilib libc6-dev-i386 \
-        libncurses5-dev x11proto-core-dev libx11-dev libgl1-mesa-dev \
-        libxml2-utils xsltproc unzip fontconfig python3 rsync ca-certificates wget
+        sudo apt-get update
+        sudo apt-get install -y git-core gnupg flex bison build-essential zip curl zlib1g-dev \
+          gcc-multilib g++-multilib libc6-dev-i386 lib32ncurses5-dev x11proto-core-dev libx11-dev \
+          lib32z-dev libgl1-mesa-dev libxml2-utils xsltproc unzip fontconfig openjdk-8-jdk
 
-        # install repo tool
-        mkdir -p ~/bin
-        curl https://storage.googleapis.com/git-repo-downloads/repo > ~/bin/repo
-        chmod a+x ~/bin/repo
-        echo "PATH=~/bin:$PATH" >> $GITHUB_ENV
+    - name: Sync minimal manifest
+      run: |
+        mkdir ~/twrp && cd ~/twrp
+        repo init -u https://github.com/minimal-manifest-twrp/platform_manifest_twrp_aosp.git -b twrp-11
+        repo sync --depth=1 --no-tags -c -j4
 
-    - name: Cache CCACHE
-      uses: actions/cache@v3
+    - name: Clone device sources
+      run: |
+        cd ~/twrp
+        git clone https://github.com/GokuBlack420/android_device_samsung_a03core.git device/samsung/a03core
+        git clone https://github.com/GokuBlack420/android_kernel_samsung_a03core.git kernel/samsung/a03core
+        git clone https://github.com/TheMuppets/proprietary_vendor_samsung.git vendor/samsung
+
+    - name: Build recovery
+      run: |
+        cd ~/twrp
+        . build/envsetup.sh
+        lunch twrp_a03core-eng
+        mka recoveryimage -j4
+
+    - name: Upload artifact
+      uses: actions/upload-artifact@v3
       with:
-        path: ~/.ccache
-        key: ${{ runner.os }}-ccache-${{ github.sha }}
-        restore-keys: |
-          ${{ runner.os }}-ccache-
-
-    - name: Init repo
-      run: |
-        mkdir twrp && cd twrp
-        repo init -u https://github.com/minimal-manifest-twrp/platform_manifest_twrp_aosp.git -b twrp-12.1
-        repo sync -j$(nproc) --force-sync
-
-    - name: Clone device tree
-      run: |
-        cd twrp
-        git clone https://github.com/GokuBlack557/twrp_device_samsung_a3core.git device/samsung/a3core
-
-    - name: Build TWRP
-      run: |
-        cd twrp
-        source build/envsetup.sh
-        lunch twrp_a3core-eng
-        mka recoveryimage -j$(nproc)
-
-    - name: Upload artifacts
-      uses: actions/upload-artifact@v4
-      with:
-        name: twrp-a3core
-        path: twrp/out/target/product/a3core/recovery.img
+        name: recovery.img
+        path: ~/twrp/out/target/product/a03core/recovery.img

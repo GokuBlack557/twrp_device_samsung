@@ -1,0 +1,61 @@
+name: Build TWRP (a3core)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+
+    env:
+      DEVICE: a3core
+      TWRP_BRANCH: twrp-11
+      ALLOW_MISSING_DEPENDENCIES: "true"
+
+    steps:
+    - name: Checkout device tree
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+
+    - name: Install packages
+      run: |
+        sudo apt update
+        sudo apt install -y openjdk-11-jdk git make gcc g++ python3 python3-pip ccache
+
+    - name: Setup repo tool
+      run: |
+        sudo pip3 install repo
+
+    - name: Prepare build folder
+      run: |
+        mkdir -p twrp
+        cd twrp
+
+    - name: Clone TWRP sources
+      run: |
+        git clone --depth=1 https://github.com/TeamWin/android_bootable_recovery.git twrp_src || true
+        mkdir -p twrp_src/device/samsung/${DEVICE}
+        cp -r $(pwd)/../* twrp_src/device/samsung/${DEVICE} || true
+        cd twrp_src
+
+    - name: Build recovery
+      run: |
+        export ALLOW_MISSING_DEPENDENCIES=true
+        . build/envsetup.sh || true
+        lunch twrp_${DEVICE}-eng || true
+        make recoveryimage -j2 || true
+
+    - name: Collect artifact
+      run: |
+        mkdir -p out_artifacts
+        if [ -f twrp_src/out/target/product/${DEVICE}/recovery.img ]; then
+          cp twrp_src/out/target/product/${DEVICE}/recovery.img out_artifacts/
+        fi
+
+    - name: Upload artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: recovery-artifacts
+        path: out_artifacts/

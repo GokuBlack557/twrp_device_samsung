@@ -17,7 +17,13 @@ jobs:
         sudo apt install -y git-core gnupg flex bison build-essential \
         zip curl zlib1g-dev gcc-multilib g++-multilib libc6-dev-i386 \
         libncurses5-dev x11proto-core-dev libx11-dev libgl1-mesa-dev \
-        libxml2-utils xsltproc unzip fontconfig python3 rsync ca-certificates
+        libxml2-utils xsltproc unzip fontconfig python3 rsync ca-certificates wget
+
+        # install repo tool
+        mkdir -p ~/bin
+        curl https://storage.googleapis.com/git-repo-downloads/repo > ~/bin/repo
+        chmod a+x ~/bin/repo
+        echo "PATH=~/bin:$PATH" >> $GITHUB_ENV
 
     - name: Cache CCACHE
       uses: actions/cache@v3

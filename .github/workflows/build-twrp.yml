@@ -20,49 +20,45 @@ jobs:
           x11proto-core-dev libx11-dev libgl1-mesa-dev libxml2-utils xsltproc \
           unzip fontconfig python3 rsync ca-certificates wget openjdk-11-jdk
 
-    - name: Install repo tool and add to PATH
+    - name: Install repo tool
       run: |
         mkdir -p $HOME/bin
         curl -sLo $HOME/bin/repo https://storage.googleapis.com/git-repo-downloads/repo
         chmod a+x $HOME/bin/repo
         echo "$HOME/bin" >> $GITHUB_PATH
 
-    - name: Prepare workspace (shallow TWRP manifest)
+    - name: Prepare TWRP source
       run: |
         mkdir -p $HOME/twrp
         cd $HOME/twrp
         repo init -u https://github.com/minimal-manifest-twrp/platform_manifest_twrp_aosp.git -b twrp-11
-        # shallow sync: reduces disk usage (may still be large)
-        repo sync --force-sync --no-clone-bundle --no-tags --depth=1 -j4 || true
+        repo sync --force-sync --no-clone-bundle --no-tags --depth=1 -j2 || true
 
-    - name: Clone your device tree into the build tree
+    - name: Clone device tree
       run: |
         cd $HOME/twrp
-        # Replace this URL only if your fork URL is different
-        git clone https://github.com/GokuBlack557/twrp_device_samsung_a3core.git device/samsung/a3core || true
-        ls -lah device/samsung/a3core || true
+        git clone https://github.com/GokuBlack557/twrp_device_samsung_a3core.git device/samsung/a3core
+        ls -lah device/samsung/a3core
 
-    - name: Build TWRP recovery (attempt)
+    - name: Build recovery
       run: |
         cd $HOME/twrp
-        # prepare environment for build
-        . build/envsetup.sh || true
-        # try both common lunch names (some trees use twrp_ or omni_)
-        if lunch twrp_a3core-eng 2>/dev/null; then
-          echo "lunch twrp_a3core-eng OK"
-        elif lunch omni_a3core-eng 2>/dev/null; then
-          echo "lunch omni_a3core-eng OK"
+        . build/envsetup.sh
+        if lunch twrp_a3core-eng; then
+          echo "Using twrp_a3core-eng"
+        elif lunch omni_a3core-eng; then
+          echo "Using omni_a3core-eng"
         else
-          echo "lunch failed - available lunch combos:"
-          lunch | sed -n '1,200p' || true
+          echo "Lunch failed, showing available combos:"
+          lunch | head -n 50
+          exit 1
         fi
-        # attempt to build (lower parallelism to reduce IO)
-        mka recoveryimage -j2 || true
-        # preserve ls of out folder for logs
+        mka recoveryimage -j2
         echo "Contents of out/target/product:"
         ls -R out/target/product || true
 
-    - name: Upload recovery artifact (if present)
+    - name: Upload recovery artifact
+      if: success()
       uses: actions/upload-artifact@v4
       with:
         name: twrp-a3core-recovery
@@ -71,7 +67,7 @@ jobs:
           $HOME/twrp/out/target/product/*/twrp*.img
           $HOME/twrp/out/target/product/*/recovery-*.img
 
-    - name: Always upload build output/logs for debugging
+    - name: Upload logs
       if: always()
       uses: actions/upload-artifact@v4
       with:
@@ -79,4 +75,3 @@ jobs:
         path: |
           $HOME/twrp/out/**
           $HOME/twrp/build/**
-

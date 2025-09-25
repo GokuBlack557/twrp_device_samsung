@@ -5,47 +5,48 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
 
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+    - name: Checkout
+      uses: actions/checkout@v4
 
-      - name: Set up build environment
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y git-core gnupg flex bison build-essential \
-            zip curl zlib1g-dev gcc-multilib g++-multilib libc6-dev-i386 \
-            libncurses5-dev x11proto-core-dev libx11-dev libgl1-mesa-dev \
-            libxml2-utils xsltproc unzip fontconfig openjdk-8-jdk
+    - name: Install dependencies
+      run: |
+        sudo apt update
+        sudo apt install -y git-core gnupg flex bison build-essential \
+        zip curl zlib1g-dev gcc-multilib g++-multilib libc6-dev-i386 \
+        libncurses5-dev x11proto-core-dev libx11-dev libgl1-mesa-dev \
+        libxml2-utils xsltproc unzip fontconfig python3 rsync ca-certificates
 
-      - name: Sync TWRP source
-        run: |
-          mkdir twrp && cd twrp
-          repo init -u https://github.com/minimal-manifest-twrp/platform_manifest_twrp_omni.git -b twrp-12.1
-          repo sync -j$(nproc) --force-sync
+    - name: Cache CCACHE
+      uses: actions/cache@v3
+      with:
+        path: ~/.ccache
+        key: ${{ runner.os }}-ccache-${{ github.sha }}
+        restore-keys: |
+          ${{ runner.os }}-ccache-
 
-      - name: Clone device tree
-        run: |
-          cd twrp
-          git clone https://github.com/GokuBlack557/twrp_a3core.git device/samsung/a3core
+    - name: Init repo
+      run: |
+        mkdir twrp && cd twrp
+        repo init -u https://github.com/minimal-manifest-twrp/platform_manifest_twrp_aosp.git -b twrp-12.1
+        repo sync -j$(nproc) --force-sync
 
-      - name: Build recovery
-        run: |
-          cd twrp
-          source build/envsetup.sh
-          lunch omni_a3core-eng
-          mka recoveryimage || true
+    - name: Clone device tree
+      run: |
+        cd twrp
+        git clone https://github.com/GokuBlack557/twrp_device_samsung_a3core.git device/samsung/a3core
 
-      - name: Upload recovery image
-        uses: actions/upload-artifact@v4
-        with:
-          name: twrp-a3core
-          path: twrp/out/target/product/*/recovery.img
+    - name: Build TWRP
+      run: |
+        cd twrp
+        source build/envsetup.sh
+        lunch twrp_a3core-eng
+        mka recoveryimage -j$(nproc)
 
-      - name: Upload build logs
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: build-logs
-          path: twrp/out
+    - name: Upload artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: twrp-a3core
+        path: twrp/out/target/product/a3core/recovery.img

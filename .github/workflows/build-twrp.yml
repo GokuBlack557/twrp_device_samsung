@@ -1,112 +1,88 @@
-name: Build TWRP (a3core)
+name: Build TWRP
 
 on:
   workflow_dispatch:
 
 jobs:
   build:
-    runs-on: ubuntu-22.04
-    timeout-minutes: 240
+    runs-on: ubuntu-latest
 
     steps:
-    - name: Checkout repository
-      uses: actions/checkout@v4
+      - name: Checkout repository
+        uses: actions/checkout@v3
 
-    - name: Show initial disk usage
-      run: |
-        echo "=== Disk usage before cleanup ==="
-        df -h .
-        echo "Top /usr size:"
-        sudo du -sh /usr/* 2>/dev/null | sort -h | tail -n 20 || true
+      - name: Show initial disk usage
+        run: |
+          echo "=== Disk usage before cleanup ==="
+          df -h
+          du -sh /usr/* 2>/dev/null | sort -h | tail -n 20
 
-    - name: Free up space
-      run: |
-        sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc || true
-        sudo apt-get clean
-        echo "=== Disk usage after cleanup ==="
-        df -h .
+      - name: Free up space
+        run: |
+          echo "=== Running cleanup to free space ==="
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /usr/local/share/boost || true
+          sudo apt-get clean
+          sudo rm -rf /var/lib/apt/lists/* /var/cache/apt/* || true
+          echo "=== Disk usage after cleanup ==="
+          df -h
 
-    - name: Install system packages
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y git-core gnupg flex bison build-essential zip curl \
-          zlib1g-dev gcc-multilib g++-multilib libc6-dev-i386 libncurses5-dev \
-          x11proto-core-dev libx11-dev libgl1-mesa-dev libxml2-utils xsltproc \
-          unzip fontconfig python3 rsync ca-certificates wget openjdk-11-jdk
+      - name: Install system packages
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            git-core gnupg flex bison gperf build-essential \
+            zip curl zlib1g-dev gcc-multilib g++-multilib \
+            libc6-dev-i386 lib32ncurses5-dev x11proto-core-dev \
+            libx11-dev lib32z-dev ccache libgl1-mesa-dev \
+            libxml2-utils xsltproc unzip fontconfig
 
-    - name: Install repo tool
-      run: |
-        mkdir -p $HOME/bin
-        curl -sLo $HOME/bin/repo https://storage.googleapis.com/git-repo-downloads/repo
-        chmod a+x $HOME/bin/repo
-        echo "$HOME/bin" >> $GITHUB_PATH
+      - name: Install repo tool
+        run: |
+          mkdir -p ~/bin
+          curl https://storage.googleapis.com/git-repo-downloads/repo > ~/bin/repo
+          chmod a+x ~/bin/repo
+          echo "$HOME/bin" >> $GITHUB_PATH
 
-    - name: Prepare TWRP source (shallow, supported flags)
-      run: |
-        mkdir -p $HOME/twrp
-        cd $HOME/twrp
-        repo init -u https://github.com/minimal-manifest-twrp/platform_manifest_twrp_aosp.git -b twrp-11
-        # use -c to sync current branch only, no-tags, no clone-bundle
-        repo sync --force-sync --no-clone-bundle --no-tags -c -j2
-        echo "Repo sync finished. Checking for build/envsetup.sh..."
-        if [ ! -f build/envsetup.sh ]; then
-          echo "ERROR: build/envsetup.sh not found. Repo sync did not populate sources."
-          echo "Listing $HOME/twrp contents for debugging:"
-          ls -lah $HOME/twrp || true
-          exit 1
-        fi
-        echo "envsetup.sh found."
+      - name: Prepare TWRP source
+        run: |
+          mkdir -p $HOME/twrp
+          cd $HOME/twrp
+          repo init -u https://github.com/minimal-manifest-twrp/platform_manifest_twrp_aosp.git -b twrp-11
+          repo sync --force-sync --no-clone-bundle --no-tags -c -j2
+          echo "Repo sync finished. Checking for build/envsetup.sh..."
+          if [ ! -f build/envsetup.sh ]; then
+            echo "ERROR: build/envsetup.sh not found. Repo sync did not populate sources."
+            ls -lah $HOME/twrp || true
+            exit 1
+          fi
 
-    - name: Clone your device tree
-      run: |
-        cd $HOME/twrp
-        git clone https://github.com/GokuBlack557/twrp_device_samsung_a3core.git device/samsung/a3core
-        echo "Device tree contents:"
-        ls -lah device/samsung/a3core || true
+      - name: Clone your device tree
+        run: |
+          cd $HOME/twrp
+          # Replace this with your real device tree repo
+          git clone https://github.com/YourGitHub/device_samsung_a03core.git device/samsung/a03core
 
-    - name: Clean workspace before build
-      run: |
-        cd $HOME/twrp
-        rm -rf out tmp || true
-        df -h .
+      - name: Clean workspace before build
+        run: |
+          cd $HOME/twrp
+          make clean
 
-    - name: Build TWRP recovery (safe -j1)
-      run: |
-        cd $HOME/twrp
-        . build/envsetup.sh
-        if lunch twrp_a3core-eng 2>/dev/null; then
-          echo "Using twrp_a3core-eng"
-        elif lunch omni_a3core-eng 2>/dev/null; then
-          echo "Using omni_a3core-eng"
-        elif lunch a03core-eng 2>/dev/null; then
-          echo "Using a03core-eng"
-        else
-          echo "Lunch failed - available combos (first 200 lines):"
-          lunch | sed -n '1,200p' || true
-          exit 1
-        fi
-        mka recoveryimage -j1
-        echo "=== Disk usage after build attempt ==="
-        df -h .
-        echo "Final out folder (if any):"
-        ls -R out/target/product || true
+      - name: Build recovery
+        run: |
+          cd $HOME/twrp
+          source build/envsetup.sh
+          lunch omni_a03core-eng
+          mka recoveryimage -j$(nproc)
 
-    - name: Upload recovery artifact (if present)
-      uses: actions/upload-artifact@v4
-      with:
-        name: twrp-a3core-recovery
-        path: |
-          $HOME/twrp/out/target/product/*/recovery*.img
-          $HOME/twrp/out/target/product/*/twrp*.img
-          $HOME/twrp/out/target/product/*/recovery-*.img
-        if-no-files-found: warn
+      - name: Upload recovery artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: twrp-recovery
+          path: $HOME/twrp/out/target/product/*/recovery.img
 
-    - name: Upload logs (always)
-      if: always()
-      uses: actions/upload-artifact@v4
-      with:
-        name: twrp-build-logs
-        path: |
-          $HOME/twrp/out/**
-          $HOME/twrp/build/**
-        if-no-files-found: warn
+      - name: Upload logs
+        if: always()
+        uses: actions/upload-artifact@v3
+        with:
+          name: build-logs
+          path: $HOME/twrp/out/target/product/*/obj/* || true

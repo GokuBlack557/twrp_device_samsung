@@ -6,6 +6,11 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    timeout-minutes: 360
+    env:
+      CCACHE_DIR: ${{ runner.temp }}/ccache
+      CCACHE_MAXSIZE: 10G
+      JAVA_HOME: /usr/lib/jvm/java-11-openjdk-amd64
 
     steps:
     - name: Checkout repository
@@ -15,69 +20,150 @@ jobs:
       run: |
         echo "=== Disk usage before cleanup ==="
         df -h
-        du -sh /usr/* 2>/dev/null | sort -h | tail -n 20
+        du -sh /usr/* 2>/dev/null | sort -h | tail -n 20 || true
 
     - name: Free up space
       run: |
-        sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc || true
+        echo "=== Running cleanup to free space ==="
+        sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /usr/local/share/boost || true
+        sudo apt-get clean || true
+        sudo rm -rf /var/lib/apt/lists/* /var/cache/apt/* || true
         echo "=== Disk usage after cleanup ==="
         df -h
 
-    - name: Install system packages
+    - name: Install system packages (includes ccache and openjdk)
       run: |
         sudo apt-get update
-        sudo apt-get install -y git-core gnupg flex bison build-essential zip curl zlib1g-dev \
-        gcc-multilib g++-multilib libc6-dev-i386 libncurses5-dev x11proto-core-dev libx11-dev \
-        lib32z1-dev libgl1-mesa-dev libxml2-utils xsltproc unzip fontconfig python-is-python3
+        sudo apt-get install -y git-core gnupg flex bison build-essential \
+          zip curl zlib1g-dev gcc-multilib g++-multilib libc6-dev-i386 \
+          lib32ncurses5-dev x11proto-core-dev libx11-dev lib32z1-dev \
+          ccache libgl1-mesa-dev libxml2-utils xsltproc unzip fontconfig \
+          python3 rsync wget openjdk-11-jdk
 
-    - name: Install repo tools
+    - name: Restore ccache (if cached)
+      uses: actions/cache@v3
+      with:
+        path: ${{ env.CCACHE_DIR }}
+        key: ${{ runner.os }}-twrp-ccache-${{ hashFiles('**/device/samsung/a3core/**') }}
+        restore-keys: |
+          ${{ runner.os }}-twrp-ccache-
+
+    - name: Configure ccache
       run: |
-        mkdir -p ~/bin
-        curl https://storage.googleapis.com/git-repo-downloads/repo > ~/bin/repo
-        chmod a+x ~/bin/repo
+        mkdir -p "${CCACHE_DIR}"
+        ccache --max-size=${CCACHE_MAXSIZE} || true
+        echo "CCACHE_DIR=${CCACHE_DIR}" >> $GITHUB_ENV
+        echo "CCACHE_MAXSIZE=${CCACHE_MAXSIZE}" >> $GITHUB_ENV
+        echo "ccache stats (before build):"
+        ccache -s || true
+
+    - name: Install repo tool
+      run: |
+        mkdir -p $HOME/bin
+        curl -sLo $HOME/bin/repo https://storage.googleapis.com/git-repo-downloads/repo
+        chmod a+x $HOME/bin/repo
         echo "$HOME/bin" >> $GITHUB_PATH
 
     - name: Prepare TWRP source (shallow, current branch)
       run: |
+        set -e
         mkdir -p $HOME/twrp
         cd $HOME/twrp
         repo init -u https://github.com/minimal-manifest-twrp/platform_manifest_twrp_aosp.git -b twrp-11
+        # shallow / current branch sync (no tags, no clone-bundle) to reduce disk usage
         repo sync --force-sync --no-clone-bundle --no-tags -c -j2
         echo "Repo sync finished. Checking for build/envsetup.sh..."
         if [ ! -f build/envsetup.sh ]; then
-          echo "ERROR: build/envsetup.sh not found. Repo sync did not populate sources."
+          echo "❌ ERROR: build/envsetup.sh not found. Repo sync incomplete."
           ls -lah $HOME/twrp || true
           exit 1
         fi
+        echo "✅ envsetup.sh found."
 
-    - name: Clone your device tree
+    - name: Clone your device tree (your fork)
       run: |
         cd $HOME/twrp
-        git clone https://github.com/GokuBlack557/twrp_device_samsung_a3core.git device/samsung/a3core
+        # <-- REPO URL BELOW: this should be the fork you already made (no change needed if you used that fork)
+        git clone https://github.com/GokuBlack557/twrp_device_samsung_a3core.git device/samsung/a3core || true
+        echo "Device tree files:"
+        ls -lah device/samsung/a3core || true
 
-    - name: Clean workspace before build
+    - name: Clean workspace
       run: |
+        cd $HOME/twrp
+        rm -rf out || true
+        df -h
+
+    - name: Build TWRP recovery (streaming log + periodic df)
+      run: |
+        set -o pipefail
+        BUILD_LOG=$HOME/build.log
+        DF_LOG=$HOME/df.log
+        rm -f "$BUILD_LOG" "$DF_LOG"
+        # background periodic disk logger every 5 minutes
+        ( while true; do date; df -h; sleep 300; done ) >> "$DF_LOG" 2>&1 & echo $! > $HOME/df_pid
+
         cd $HOME/twrp
         . build/envsetup.sh
-        lunch twrp_a3core-eng
-        mka clean
 
-    - name: Build recovery image
-      run: |
-        cd $HOME/twrp
-        . build/envsetup.sh
-        lunch twrp_a3core-eng
-        mka recoveryimage
+        # try several likely lunch combos (stop on the first that works)
+        if lunch twrp_a3core-eng 2>/dev/null; then
+          echo "Using twrp_a3core-eng"
+        elif lunch omni_a3core-eng 2>/dev/null; then
+          echo "Using omni_a3core-eng"
+        elif lunch a3core-eng 2>/dev/null; then
+          echo "Using a3core-eng"
+        elif lunch a03core-eng 2>/dev/null; then
+          echo "Using a03core-eng"
+        else
+          echo "No known lunch combos worked. Showing available combos (first 200 lines):"
+          lunch | sed -n '1,200p' || true
+          kill $(cat $HOME/df_pid) || true
+          exit 1
+        fi
 
-    - name: Upload recovery artifact
+        # actually build the recovery; streaming to build.log
+        # use -j2 here (faster) but you can change to -j1 if you want lower I/O
+        mka recoveryimage -j2 2>&1 | tee "$BUILD_LOG"
+        BUILD_EXIT=${PIPESTATUS[0]}
+
+        # stop background df logger
+        kill $(cat $HOME/df_pid) || true
+        echo "Build finished with exit code: $BUILD_EXIT"
+        # show final disk state
+        df -h
+        ls -R out/target/product || true
+
+        # fail the step if build failed (so later 'failure()' steps run)
+        exit $BUILD_EXIT
+
+    - name: Upload recovery artifact (on success)
+      if: success()
       uses: actions/upload-artifact@v4
       with:
-        name: twrp-recovery
-        path: $HOME/twrp/out/target/product/*/recovery.img
+        name: twrp-a3core-recovery
+        path: |
+          $HOME/twrp/out/target/product/*/recovery*.img
+          $HOME/twrp/out/target/product/*/twrp*.img
 
-    - name: Upload logs (always)
+    - name: Upload build log (always)
       if: always()
       uses: actions/upload-artifact@v4
       with:
-        name: build-logs
-        path: $HOME/twrp/out/target/product/*/obj/* || true
+        name: twrp-build-log
+        path: |
+          $HOME/build.log
+          $HOME/df.log
+
+    - name: Upload full source tree for debugging if sync/build failed
+      if: failure()
+      uses: actions/upload-artifact@v4
+      with:
+        name: twrp-source-tree
+        path: $HOME/twrp/**
+
+    - name: Show ccache stats (always)
+      if: always()
+      run: |
+        echo "=== ccache stats ==="
+        ccache -s || true

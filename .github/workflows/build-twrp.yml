@@ -15,15 +15,16 @@ jobs:
     - name: Show initial disk usage
       run: |
         echo "=== Disk usage before cleanup ==="
-        df -h
-        sudo du -sh /usr/* 2>/dev/null | sort -h | tail -n 20
+        df -h .
+        echo "Top /usr size:"
+        sudo du -sh /usr/* 2>/dev/null | sort -h | tail -n 20 || true
 
     - name: Free up space
       run: |
-        sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc
+        sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc || true
         sudo apt-get clean
         echo "=== Disk usage after cleanup ==="
-        df -h
+        df -h .
 
     - name: Install system packages
       run: |
@@ -40,45 +41,65 @@ jobs:
         chmod a+x $HOME/bin/repo
         echo "$HOME/bin" >> $GITHUB_PATH
 
-    - name: Prepare TWRP source
+    - name: Prepare TWRP source (shallow, supported flags)
       run: |
         mkdir -p $HOME/twrp
         cd $HOME/twrp
         repo init -u https://github.com/minimal-manifest-twrp/platform_manifest_twrp_aosp.git -b twrp-11
-        repo sync --force-sync --no-clone-bundle --no-tags --depth=1 -j4
+        # use -c to sync current branch only, no-tags, no clone-bundle
+        repo sync --force-sync --no-clone-bundle --no-tags -c -j2
+        echo "Repo sync finished. Checking for build/envsetup.sh..."
+        if [ ! -f build/envsetup.sh ]; then
+          echo "ERROR: build/envsetup.sh not found. Repo sync did not populate sources."
+          echo "Listing $HOME/twrp contents for debugging:"
+          ls -lah $HOME/twrp || true
+          exit 1
+        fi
+        echo "envsetup.sh found."
 
-    - name: Clone device tree
+    - name: Clone your device tree
       run: |
         cd $HOME/twrp
         git clone https://github.com/GokuBlack557/twrp_device_samsung_a3core.git device/samsung/a3core
-        ls -lah device/samsung/a3core
+        echo "Device tree contents:"
+        ls -lah device/samsung/a3core || true
 
-    - name: Build recovery
+    - name: Clean workspace before build
+      run: |
+        cd $HOME/twrp
+        rm -rf out tmp || true
+        df -h .
+
+    - name: Build TWRP recovery (safe -j1)
       run: |
         cd $HOME/twrp
         . build/envsetup.sh
-        if lunch twrp_a3core-eng; then
+        if lunch twrp_a3core-eng 2>/dev/null; then
           echo "Using twrp_a3core-eng"
-        elif lunch omni_a3core-eng; then
+        elif lunch omni_a3core-eng 2>/dev/null; then
           echo "Using omni_a3core-eng"
+        elif lunch a03core-eng 2>/dev/null; then
+          echo "Using a03core-eng"
         else
-          echo "Lunch failed, available combos:"
-          lunch | head -n 50
+          echo "Lunch failed - available combos (first 200 lines):"
+          lunch | sed -n '1,200p' || true
           exit 1
         fi
         mka recoveryimage -j1
-        echo "=== Disk usage after build ==="
-        df -h
-        echo "Final out folder contents:"
+        echo "=== Disk usage after build attempt ==="
+        df -h .
+        echo "Final out folder (if any):"
         ls -R out/target/product || true
 
-    - name: Upload recovery
+    - name: Upload recovery artifact (if present)
       uses: actions/upload-artifact@v4
       with:
         name: twrp-a3core-recovery
         path: |
           $HOME/twrp/out/target/product/*/recovery*.img
           $HOME/twrp/out/target/product/*/twrp*.img
+          $HOME/twrp/out/target/product/*/recovery-*.img
+        if-no-files-found: warn
 
     - name: Upload logs (always)
       if: always()
@@ -88,3 +109,4 @@ jobs:
         path: |
           $HOME/twrp/out/**
           $HOME/twrp/build/**
+        if-no-files-found: warn

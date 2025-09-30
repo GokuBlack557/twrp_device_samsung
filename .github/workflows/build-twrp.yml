@@ -1,4 +1,4 @@
-name: Build TWRP (a3core)
+name: Build TWRP
 
 on:
   workflow_dispatch:
@@ -6,119 +6,53 @@ on:
 jobs:
   build:
     runs-on: ubuntu-22.04
-    timeout-minutes: 240
 
     steps:
-    - name: Checkout repo (workflow)
-      uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
 
-    - name: Show initial disk usage
-      run: |
-        echo "=== Disk usage before cleanup ==="
-        df -h .
-        du -sh /usr/* 2>/dev/null | sort -h | tail -n 20 || true
+      - name: Free up disk space
+        run: |
+          echo "Cleaning up space..."
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc
+          sudo apt-get clean
+          sudo rm -rf /var/lib/apt/lists/*
+          df -h
 
-    - name: Free up space (pre-clean)
-      run: |
-        sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /usr/local/share/boost || true
-        sudo apt-get clean || true
-        sudo rm -rf /var/lib/apt/lists/* /var/cache/apt/* || true
-        df -h .
+      - name: Install dependencies
+        run: |
+          sudo dpkg --add-architecture i386
+          sudo apt-get update
+          sudo apt-get install -y \
+            bc bison build-essential ccache curl flex g++-multilib gcc-multilib \
+            git gnupg gperf imagemagick lib32ncurses-dev lib32readline-dev \
+            lib32z1-dev liblz4-tool libncurses5-dev libsdl1.2-dev libssl-dev \
+            libxml2 libxml2-utils lzop pngcrush rsync schedtool squashfs-tools \
+            xsltproc zip zlib1g-dev libncurses5 libtinfo5
+          df -h
 
-    - name: Install system packages
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y git-core gnupg flex bison build-essential \
-          zip curl zlib1g-dev gcc-multilib g++-multilib libc6-dev-i386 \
-          x11proto-core-dev libx11-dev lib32z1-dev \
-          ccache libgl1-mesa-dev libxml2-utils xsltproc unzip fontconfig \
-          python3 rsync wget openjdk-11-jdk
+      - name: Init repo
+        run: |
+          mkdir ~/twrp && cd ~/twrp
+          repo init -u https://github.com/minimal-manifest-twrp/platform_manifest_twrp_aosp.git -b twrp-12.1
+          repo sync -c -j$(nproc) --force-sync --no-clone-bundle --no-tags
 
-    - name: Install repo tool
-      run: |
-        mkdir -p $HOME/bin
-        curl -sLo $HOME/bin/repo https://storage.googleapis.com/git-repo-downloads/repo
-        chmod a+x $HOME/bin/repo
-        echo "$HOME/bin" >> $GITHUB_PATH
-        $HOME/bin/repo --version || true
+      - name: Device tree setup
+        run: |
+          cd ~/twrp
+          git clone https://github.com/YOUR_DEVICE_TREE_HERE device/samsung/a03core
 
-    - name: Restore ccache (if any)
-      uses: actions/cache@v3
-      with:
-        path: ~/.ccache
-        key: ${{ runner.os }}-twrp-ccache-${{ hashFiles('**/device/samsung/a3core/**') }}
-        restore-keys: |
-          ${{ runner.os }}-twrp-ccache-
+      - name: Lunch and build
+        run: |
+          cd ~/twrp
+          . build/envsetup.sh
+          lunch omni_a03core-eng
+          make recoveryimage -j$(nproc)
 
-    - name: Configure ccache
-      run: |
-        mkdir -p ~/.ccache
-        ccache -M 10G || true
-        ccache -s || true
-
-    - name: Prepare TWRP source (twrp-11, shallow)
-      run: |
-        set -e
-        mkdir -p $HOME/twrp
-        cd $HOME/twrp
-        repo init -u https://github.com/minimal-manifest-twrp/platform_manifest_twrp_aosp.git -b twrp-11
-        repo sync --force-sync --no-clone-bundle --no-tags -c -j2
-        [ -f build/envsetup.sh ]
-
-    - name: Clone device tree
-      run: |
-        cd $HOME/twrp
-        mkdir -p device/samsung
-        git clone https://github.com/GokuBlack557/twrp_device_samsung_a3core.git device/samsung/a3core
-        ls -lah device/samsung/a3core || true
-
-    - name: Clean previous outputs
-      run: |
-        cd $HOME/twrp
-        rm -rf out || true
-        df -h .
-
-    - name: Build TWRP recovery
-      run: |
-        set -o pipefail
-        BUILD_LOG=$HOME/build.log
-        DF_LOG=$HOME/df.log
-        rm -f "$BUILD_LOG" "$DF_LOG"
-        ( while true; do date; df -h; sleep 300; done ) >> "$DF_LOG" 2>&1 & echo $! > $HOME/df_pid
-        cd $HOME/twrp
-        . build/envsetup.sh
-        lunch twrp_a3core-eng || lunch omni_a3core-eng || lunch a3core-eng || lunch a03core-eng
-        mka recoveryimage -j1 2>&1 | tee "$BUILD_LOG"
-        BUILD_EXIT=${PIPESTATUS[0]}
-        kill $(cat $HOME/df_pid) || true
-        exit $BUILD_EXIT
-
-    - name: Upload recovery artifact
-      if: success()
-      uses: actions/upload-artifact@v4
-      with:
-        name: twrp-a3core-recovery
-        path: |
-          $HOME/twrp/out/target/product/*/recovery*.img
-          $HOME/twrp/out/target/product/*/twrp*.img
-          $HOME/twrp/out/target/product/*/*.zip
-
-    - name: Upload build logs
-      if: always()
-      uses: actions/upload-artifact@v4
-      with:
-        name: twrp-build-logs
-        path: |
-          $HOME/build.log
-          $HOME/df.log
-
-    - name: Upload source tree on failure
-      if: failure()
-      uses: actions/upload-artifact@v4
-      with:
-        name: twrp-source-tree
-        path: $HOME/twrp/**
-
-    - name: Show ccache stats
-      if: always()
-      run: ccache -s || true
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: twrp-build
+          path: |
+            ~/twrp/out/target/product/*/recovery.img
+            ~/twrp/out/target/product/*/boot.img

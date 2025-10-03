@@ -48,10 +48,8 @@ jobs:
 
       - name: Add local manifest (device + kernel + vendor)
         run: |
-          cd ~/twrp/.repo
-          mkdir -p local_manifests
-          cat > local_manifests/roomservice.xml <<'EOF'
-<?xml version="1.0" encoding="UTF-8"?>
+          mkdir -p ~/twrp/.repo/local_manifests
+          echo '<?xml version="1.0" encoding="UTF-8"?>
 <manifest>
     <!-- Core TWRP recovery -->
     <project name="TeamWin/android_bootable_recovery" path="bootable/recovery" remote="github" revision="twrp-12.1"/>
@@ -64,8 +62,7 @@ jobs:
     
     <!-- Vendor blobs -->
     <project name="GokuBlack557/vendor_samsung_a3core" path="vendor/samsung/a3core" remote="github" revision="main"/>
-</manifest>
-EOF
+</manifest>' > ~/twrp/.repo/local_manifests/roomservice.xml
 
       - name: Sync minimal sources
         run: |

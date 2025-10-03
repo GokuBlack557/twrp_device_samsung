@@ -9,7 +9,7 @@ jobs:
     timeout-minutes: 360
 
     steps:
-      - name: Checkout repo
+      - name: Checkout workflow repo
         uses: actions/checkout@v4
 
       - name: Show initial disk usage
@@ -40,17 +40,37 @@ jobs:
           chmod a+x ~/.bin/repo
           echo "$HOME/.bin" >> $GITHUB_PATH
 
-      - name: Init & sync minimal manifest (OMNI, twrp-11)
+      - name: Init TWRP (empty manifest)
         run: |
           mkdir -p ~/twrp
           cd ~/twrp
-          repo init -u https://github.com/minimal-manifest-twrp/platform_manifest_twrp_omni.git -b twrp-11 --depth=1
-          repo sync -c -j$(nproc) --no-clone-bundle --no-tags
+          repo init -u https://github.com/minimal-manifest-twrp/platform_manifest_twrp_aosp.git -b twrp-12.1 --depth=1
 
-      - name: Clone device tree
+      - name: Add local manifest (device + kernel + vendor)
+        run: |
+          cd ~/twrp/.repo
+          mkdir -p local_manifests
+          cat > local_manifests/roomservice.xml <<'EOF'
+<?xml version="1.0" encoding="UTF-8"?>
+<manifest>
+    <!-- Core TWRP recovery -->
+    <project name="TeamWin/android_bootable_recovery" path="bootable/recovery" remote="github" revision="twrp-12.1"/>
+    
+    <!-- Device tree for A03 Core -->
+    <project name="GokuBlack557/twrp_device_samsung_a3core" path="device/samsung/a3core" remote="github" revision="main"/>
+    
+    <!-- Kernel source -->
+    <project name="GokuBlack557/kernel_samsung_a3core" path="kernel/samsung/a3core" remote="github" revision="main"/>
+    
+    <!-- Vendor blobs -->
+    <project name="GokuBlack557/vendor_samsung_a3core" path="vendor/samsung/a3core" remote="github" revision="main"/>
+</manifest>
+EOF
+
+      - name: Sync minimal sources
         run: |
           cd ~/twrp
-          git clone https://github.com/GokuBlack557/twrp_device_samsung_a3core.git device/samsung/a3core
+          repo sync -c --no-clone-bundle --no-tags --optimized-fetch --prune --force-sync
 
       - name: Setup build
         run: |
@@ -69,3 +89,10 @@ jobs:
         with:
           name: twrp-a3core-recovery
           path: ~/twrp/out/target/product/*/recovery.img
+
+      - name: Cleanup build artifacts
+        run: |
+          echo "=== Cleaning up intermediate build files ==="
+          rm -rf ~/twrp/out
+          rm -rf ~/twrp/.repo/projects/*
+          df -h

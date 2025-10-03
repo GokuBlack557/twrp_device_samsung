@@ -49,20 +49,16 @@ jobs:
       - name: Add local manifest (device + kernel + vendor)
         run: |
           mkdir -p ~/twrp/.repo/local_manifests
-          echo '<?xml version="1.0" encoding="UTF-8"?>
-<manifest>
-    <!-- Core TWRP recovery -->
-    <project name="TeamWin/android_bootable_recovery" path="bootable/recovery" remote="github" revision="twrp-12.1"/>
-    
-    <!-- Device tree for A03 Core -->
-    <project name="GokuBlack557/twrp_device_samsung_a3core" path="device/samsung/a3core" remote="github" revision="main"/>
-    
-    <!-- Kernel source -->
-    <project name="GokuBlack557/kernel_samsung_a3core" path="kernel/samsung/a3core" remote="github" revision="main"/>
-    
-    <!-- Vendor blobs -->
-    <project name="GokuBlack557/vendor_samsung_a3core" path="vendor/samsung/a3core" remote="github" revision="main"/>
-</manifest>' > ~/twrp/.repo/local_manifests/roomservice.xml
+          printf '<?xml version="1.0" encoding="UTF-8"?>\n<manifest>\n' > ~/twrp/.repo/local_manifests/roomservice.xml
+          printf '    <!-- Core TWRP recovery -->\n' >> ~/twrp/.repo/local_manifests/roomservice.xml
+          printf '    <project name="TeamWin/android_bootable_recovery" path="bootable/recovery" remote="github" revision="twrp-12.1"/>\n' >> ~/twrp/.repo/local_manifests/roomservice.xml
+          printf '    <!-- Device tree for A03 Core -->\n' >> ~/twrp/.repo/local_manifests/roomservice.xml
+          printf '    <project name="GokuBlack557/twrp_device_samsung_a3core" path="device/samsung/a3core" remote="github" revision="main"/>\n' >> ~/twrp/.repo/local_manifests/roomservice.xml
+          printf '    <!-- Kernel source -->\n' >> ~/twrp/.repo/local_manifests/roomservice.xml
+          printf '    <project name="GokuBlack557/kernel_samsung_a3core" path="kernel/samsung/a3core" remote="github" revision="main"/>\n' >> ~/twrp/.repo/local_manifests/roomservice.xml
+          printf '    <!-- Vendor blobs -->\n' >> ~/twrp/.repo/local_manifests/roomservice.xml
+          printf '    <project name="GokuBlack557/vendor_samsung_a3core" path="vendor/samsung/a3core" remote="github" revision="main"/>\n' >> ~/twrp/.repo/local_manifests/roomservice.xml
+          printf '</manifest>\n' >> ~/twrp/.repo/local_manifests/roomservice.xml
 
       - name: Sync minimal sources
         run: |

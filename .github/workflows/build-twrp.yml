@@ -1,96 +1,66 @@
-name: Build TWRP (a3core)
+name: build
 
 on:
   workflow_dispatch:
 
 jobs:
   build:
-    runs-on: ubuntu-22.04
-    timeout-minutes: 360
+    runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout workflow repo
-        uses: actions/checkout@v4
+    - name: Checkout workflow repo
+      uses: actions/checkout@v3
 
-      - name: Show initial disk usage
-        run: |
-          echo "=== Disk before cleanup ==="
-          df -h
-          du -sh /usr/* || true
-          echo "=== Memory check ==="
-          free -h
+    - name: Show initial disk usage
+      run: df -h
 
-      - name: Free up space
-        run: |
-          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc || true
-          sudo apt-get clean
-          sudo rm -rf /var/lib/apt/lists/* /var/cache/apt/* || true
-          df -h
+    - name: Free up space
+      run: |
+        sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /usr/local/share/boost || true
+        df -h
 
-      - name: Install dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y git-core gnupg flex bison gperf build-essential \
-            zip curl zlib1g-dev gcc-multilib g++-multilib libc6-dev-i386 \
-            libncurses5-dev lib32ncurses-dev libx11-dev lib32z1-dev \
-            libgl1-mesa-dev libxml2-utils xsltproc unzip fontconfig python-is-python3
+    - name: Install dependencies
+      run: |
+        sudo apt update
+        sudo apt install -y git-core gnupg flex bison gperf build-essential zip curl zlib1g-dev \
+          gcc-multilib g++-multilib libc6-dev-i386 lib32ncurses5-dev x11proto-core-dev libx11-dev \
+          lib32z-dev ccache libgl1-mesa-dev libxml2-utils xsltproc unzip fontconfig python-is-python3
 
-      - name: Install repo tool
-        run: |
-          mkdir -p ~/.bin
-          curl https://storage.googleapis.com/git-repo-downloads/repo > ~/.bin/repo
-          chmod a+x ~/.bin/repo
-          echo "$HOME/.bin" >> $GITHUB_PATH
+    - name: Install repo tool
+      run: |
+        mkdir -p ~/bin
+        curl https://storage.googleapis.com/git-repo-downloads/repo > ~/bin/repo
+        chmod a+x ~/bin/repo
+        echo "PATH=~/bin:$PATH" >> $GITHUB_ENV
 
-      - name: Init TWRP manifest (12.1)
-        run: |
-          mkdir -p ~/twrp
-          cd ~/twrp
-          repo init -u https://github.com/minimal-manifest-twrp/platform_manifest_twrp_aosp.git \
-            -b twrp-12.1 --depth=1
+    - name: Init TWRP manifest (twrp-11)
+      run: |
+        mkdir -p ~/twrp
+        cd ~/twrp
+        repo init -u https://github.com/minimal-manifest-twrp/platform_manifest_twrp_omni.git -b twrp-11 --depth=1
 
-      - name: Add local manifest
-        run: |
-          mkdir -p ~/twrp/.repo/local_manifests
-          cat <<EOF > ~/twrp/.repo/local_manifests/roomservice.xml
-          <?xml version="1.0" encoding="UTF-8"?>
-          <manifest>
-              <!-- Device tree -->
-              <project name="GokuBlack557/twrp_device_samsung_a3core" path="device/samsung/a3core" remote="github" revision="main"/>
-              <!-- Kernel -->
-              <project name="GokuBlack557/kernel_samsung_a3core" path="kernel/samsung/a3core" remote="github" revision="main"/>
-              <!-- Vendor -->
-              <project name="GokuBlack557/vendor_samsung_a3core" path="vendor/samsung/a3core" remote="github" revision="main"/>
-          </manifest>
-          EOF
+    - name: Add local manifest
+      run: |
+        mkdir -p ~/twrp/.repo/local_manifests
+        cat <<EOF > ~/twrp/.repo/local_manifests/a3core.xml
+        <manifest>
+          <project name="GokuBlack557/twrp_device_samsung_a3core" path="device/samsung/a3core" remote="github" revision="twrp-11" />
+          <project name="GokuBlack557/kernel_samsung_a3core" path="kernel/samsung/a3core" remote="github" revision="twrp-11" />
+          <project name="GokuBlack557/vendor_samsung_a3core" path="vendor/samsung/a3core" remote="github" revision="twrp-11" />
+        </manifest>
+        EOF
 
-      - name: Sync sources (optimized)
-        run: |
-          cd ~/twrp
-          repo sync -c --no-clone-bundle --no-tags --optimized-fetch \
-            --prune --force-sync --current-branch
+    - name: Sync sources (optimized)
+      run: |
+        cd ~/twrp
+        repo sync -c --no-clone-bundle --no-tags --optimized-fetch --prune --force-sync -j$(nproc)
 
-      - name: Setup build
-        run: |
-          cd ~/twrp
-          source build/envsetup.sh
-          export ALLOW_MISSING_DEPENDENCIES=true
-          lunch omni_a3core-eng
+    - name: Build recovery image
+      run: |
+        cd ~/twrp
+        source build/envsetup.sh
+        lunch omni_a3core-eng
+        mka recoveryimage
 
-      - name: Build recovery
-        run: |
-          cd ~/twrp
-          mka recoveryimage -j$(nproc)
-
-      - name: Upload recovery
-        uses: actions/upload-artifact@v4
-        with:
-          name: twrp-a3core-recovery
-          path: ~/twrp/out/target/product/*/recovery.img
-
-      - name: Cleanup build artifacts
-        run: |
-          echo "=== Cleaning up intermediate build files ==="
-          rm -rf ~/twrp/out
-          rm -rf ~/twrp/.repo/projects/*
-          df -h
+    - name: Show used disk space
+      run: df -h

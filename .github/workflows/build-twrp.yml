@@ -44,6 +44,10 @@ jobs:
         mkdir -p ~/twrp/.repo/local_manifests
         cat <<EOF > ~/twrp/.repo/local_manifests/a3core.xml
         <manifest>
+          <remove-project name="platform/prebuilts/rust" />
+          <remove-project name="platform/prebuilts/clang" />
+          <remove-project name="platform/prebuilts/gcc" />
+
           <project name="GokuBlack557/twrp_device_samsung_a3core" path="device/samsung/a3core" remote="github" revision="twrp-11" />
           <project name="GokuBlack557/kernel_samsung_a3core" path="kernel/samsung/a3core" remote="github" revision="twrp-11" />
           <project name="GokuBlack557/vendor_samsung_a3core" path="vendor/samsung/a3core" remote="github" revision="twrp-11" />

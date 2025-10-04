@@ -42,37 +42,42 @@ jobs:
           chmod a+x ~/.bin/repo
           echo "$HOME/.bin" >> $GITHUB_PATH
 
-      - name: Init TWRP (empty manifest)
+      - name: Init TWRP manifest (12.1)
         run: |
           mkdir -p ~/twrp
           cd ~/twrp
-          repo init -u https://github.com/minimal-manifest-twrp/platform_manifest_twrp_aosp.git -b twrp-12.1 --depth=1
+          repo init -u https://github.com/minimal-manifest-twrp/platform_manifest_twrp_aosp.git \
+            -b twrp-12.1 --depth=1
 
-      - name: Add local manifest (device + kernel + vendor)
+      - name: Add local manifest
         run: |
           mkdir -p ~/twrp/.repo/local_manifests
-          printf '<?xml version="1.0" encoding="UTF-8"?>\n<manifest>\n' > ~/twrp/.repo/local_manifests/roomservice.xml
-          printf '    <!-- Device tree for A03 Core -->\n' >> ~/twrp/.repo/local_manifests/roomservice.xml
-          printf '    <project name="GokuBlack557/twrp_device_samsung_a3core" path="device/samsung/a3core" remote="github" revision="main"/>\n' >> ~/twrp/.repo/local_manifests/roomservice.xml
-          printf '    <!-- Kernel source -->\n' >> ~/twrp/.repo/local_manifests/roomservice.xml
-          printf '    <project name="GokuBlack557/kernel_samsung_a3core" path="kernel/samsung/a3core" remote="github" revision="main"/>\n' >> ~/twrp/.repo/local_manifests/roomservice.xml
-          printf '    <!-- Vendor blobs -->\n' >> ~/twrp/.repo/local_manifests/roomservice.xml
-          printf '    <project name="GokuBlack557/vendor_samsung_a3core" path="vendor/samsung/a3core" remote="github" revision="main"/>\n' >> ~/twrp/.repo/local_manifests/roomservice.xml
-          printf '</manifest>\n' >> ~/twrp/.repo/local_manifests/roomservice.xml
+          cat <<EOF > ~/twrp/.repo/local_manifests/roomservice.xml
+          <?xml version="1.0" encoding="UTF-8"?>
+          <manifest>
+              <!-- Device tree -->
+              <project name="GokuBlack557/twrp_device_samsung_a3core" path="device/samsung/a3core" remote="github" revision="main"/>
+              <!-- Kernel -->
+              <project name="GokuBlack557/kernel_samsung_a3core" path="kernel/samsung/a3core" remote="github" revision="main"/>
+              <!-- Vendor -->
+              <project name="GokuBlack557/vendor_samsung_a3core" path="vendor/samsung/a3core" remote="github" revision="main"/>
+          </manifest>
+          EOF
 
       - name: Pre-sync environment check
         run: |
-          echo "=== Pre-sync disk usage ==="
+          echo "=== Disk usage ==="
           df -h
-          echo "=== Pre-sync memory ==="
+          echo "=== Memory ==="
           free -h
-          echo "=== Check available cores ==="
+          echo "=== CPU cores ==="
           nproc
 
-      - name: Sync minimal sources
+      - name: Sync sources (shallow, optimized)
         run: |
           cd ~/twrp
-          repo sync -c --no-clone-bundle --no-tags --optimized-fetch --prune --force-sync
+          repo sync -c --no-clone-bundle --no-tags --optimized-fetch \
+            --prune --force-sync --current-branch --depth=1
 
       - name: Setup build
         run: |

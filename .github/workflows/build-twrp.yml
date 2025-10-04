@@ -64,20 +64,11 @@ jobs:
           </manifest>
           EOF
 
-      - name: Pre-sync environment check
-        run: |
-          echo "=== Disk usage ==="
-          df -h
-          echo "=== Memory ==="
-          free -h
-          echo "=== CPU cores ==="
-          nproc
-
-      - name: Sync sources (shallow, optimized)
+      - name: Sync sources (optimized)
         run: |
           cd ~/twrp
           repo sync -c --no-clone-bundle --no-tags --optimized-fetch \
-            --prune --force-sync --current-branch --depth=1
+            --prune --force-sync --current-branch
 
       - name: Setup build
         run: |

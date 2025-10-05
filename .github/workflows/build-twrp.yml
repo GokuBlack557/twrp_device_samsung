@@ -8,9 +8,11 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    - name: Checkout main repo
+    # 1. Checkout current repo
+    - name: Checkout
       uses: actions/checkout@v4
 
+    # 2. Install dependencies
     - name: Install dependencies
       run: |
         sudo apt update
@@ -18,11 +20,13 @@ jobs:
           gcc-multilib g++-multilib libc6-dev-i386 libncurses5-dev x11proto-core-dev \
           libx11-dev lib32z1-dev libgl1-mesa-dev libxml2-utils xsltproc unzip fontconfig python3
 
+    # 3. Install repo tool
     - name: Install repo tool
       run: |
-        sudo curl https://storage.googleapis.com/git-repo-downloads/repo -o /usr/local/bin/repo
+        sudo curl -s https://storage.googleapis.com/git-repo-downloads/repo -o /usr/local/bin/repo
         sudo chmod a+x /usr/local/bin/repo
 
+    # 4. Initialize TWRP repo (Android 9 branch)
     - name: Initialize TWRP repo (Android 9)
       run: |
         mkdir -p ~/twrp
@@ -30,13 +34,15 @@ jobs:
         repo init -u https://github.com/minimal-manifest-twrp/platform_manifest_twrp_omni.git -b twrp-9.0 --depth=1
         repo sync -c --no-tags --no-clone-bundle -j$(nproc)
 
-    - name: Clone device tree (private repo)
+    # 5. Clone your device tree (using token)
+    - name: Clone device tree
       env:
         GH_PAT: ${{ secrets.GH_PAT }}
       run: |
         cd ~/twrp
-        git clone https://GokuBlack557:$GH_PAT@github.com/GokuBlack557/twrp_device_samsung_a03core.git device/samsung/a03core
+        git clone https://$GH_PAT@github.com/GokuBlack557/twrp_device_samsung_a03core.git device/samsung/a03core
 
+    # 6. Build TWRP
     - name: Build TWRP
       run: |
         cd ~/twrp
@@ -44,6 +50,7 @@ jobs:
         lunch omni_a03core-eng
         mka recoveryimage -j$(nproc)
 
+    # 7. Upload recovery image artifact
     - name: Upload recovery image
       uses: actions/upload-artifact@v4
       with:

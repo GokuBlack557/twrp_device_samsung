@@ -35,8 +35,9 @@ jobs:
         GH_PAT: ${{ secrets.GH_PAT }}
       run: |
         cd ~/twrp
-        git config --global credential.helper store
-        echo "https://GokuBlack557:${GH_PAT}@github.com" > ~/.git-credentials
+        # Set up HTTPS credentials for Git
+        git config --global credential.helper "store --file=$HOME/.git-credentials"
+        echo "https://$GH_PAT@github.com" > $HOME/.git-credentials
         git clone https://github.com/GokuBlack557/twrp_device_samsung_a03core.git device/samsung/a03core
 
     - name: Build TWRP

@@ -33,7 +33,7 @@ jobs:
     - name: Clone device tree
       run: |
         cd ~/twrp
-        git clone https://github.com/sanele-sibiya/twrp_device_samsung_a03core.git device/samsung/a03core
+        git clone https://github.com/GokuBlack557/twrp_device_samsung_a03core.git device/samsung/a03core
 
     - name: Build TWRP
       run: |

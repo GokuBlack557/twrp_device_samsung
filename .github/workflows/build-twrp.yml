@@ -35,7 +35,7 @@ jobs:
         GH_PAT: ${{ secrets.GH_PAT }}
       run: |
         cd ~/twrp
-        git clone https://$GH_PAT@github.com/GokuBlack557/twrp_device_samsung_a03core.git device/samsung/a03core
+        git clone https://GokuBlack557:$GH_PAT@github.com/GokuBlack557/twrp_device_samsung_a03core.git device/samsung/a03core
 
     - name: Build TWRP
       run: |

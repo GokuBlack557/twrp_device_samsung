@@ -30,25 +30,17 @@ jobs:
         repo init -u https://github.com/minimal-manifest-twrp/platform_manifest_twrp_omni.git -b twrp-9.0 --depth=1
         repo sync -c --no-tags --no-clone-bundle -j$(nproc)
 
-    # ✅ Step to check if the secret is being read
-    - name: Debug GH_PAT
+    # ✅ SSH setup and clone device tree
+    - name: Setup SSH and clone device tree
       env:
-        GH_PAT: ${{ secrets.GH_PAT }}
+        SSH_KEY: ${{ secrets.SSH_KEY }}
       run: |
-        if [ -z "$GH_PAT" ]; then
-          echo "❌ GH_PAT is EMPTY. Check your repository secrets."
-          exit 1
-        else
-          echo "✅ GH_PAT is set properly."
-        fi
-
-    # ✅ Correct Git clone syntax using username + token
-    - name: Clone device tree
-      env:
-        GH_PAT: ${{ secrets.GH_PAT }}
-      run: |
+        mkdir -p ~/.ssh
+        echo "$SSH_KEY" > ~/.ssh/id_ed25519
+        chmod 600 ~/.ssh/id_ed25519
+        ssh-keyscan github.com >> ~/.ssh/known_hosts
         cd ~/twrp
-        git clone https://GokuBlack557:${GH_PAT}@github.com/GokuBlack557/twrp_device_samsung_a03core.git device/samsung/a03core
+        git clone git@github.com:GokuBlack557/twrp_device_samsung_a03core.git device/samsung/a03core
 
     - name: Build TWRP
       run: |

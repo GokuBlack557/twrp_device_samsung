@@ -30,12 +30,14 @@ jobs:
         repo init -u https://github.com/minimal-manifest-twrp/platform_manifest_twrp_omni.git -b twrp-9.0 --depth=1
         repo sync -c --no-tags --no-clone-bundle -j$(nproc)
 
-    - name: Clone device tree (private repo)
+    - name: Clone device tree (private repo safely)
       env:
         GH_PAT: ${{ secrets.GH_PAT }}
       run: |
         cd ~/twrp
-        git clone https://GokuBlack557:$GH_PAT@github.com/GokuBlack557/twrp_device_samsung_a03core.git device/samsung/a03core
+        git config --global credential.helper store
+        echo "https://GokuBlack557:${GH_PAT}@github.com" > ~/.git-credentials
+        git clone https://github.com/GokuBlack557/twrp_device_samsung_a03core.git device/samsung/a03core
 
     - name: Build TWRP
       run: |
